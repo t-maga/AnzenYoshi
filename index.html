@@ -103,6 +103,10 @@
 
         completeButton.addEventListener('click', () => {
             alert('安全確認が完了しました。運転を開始できます。');
+            // Continue person detection even after checklist is complete
+            if (!personDetected) {
+                loadModelAndDetectPerson();
+            }
         });
 
         // Set up the video stream for person detection
