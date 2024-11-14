@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>建設現場の安全管理アプリ - サンプル</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        .checklist-item {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+        }
+        .checklist-item label {
+            flex: 1;
+        }
+        .checklist-status {
+            margin-left: 10px;
+            color: green;
+            font-weight: bold;
+        }
+        .button {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            margin-top: 20px;
+            background-color: #007BFF;
+            color: white;
+            text-align: center;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .button:disabled {
+            background-color: #cccccc;
+        }
+        .video-container {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>建設現場の安全管理アプリ</h2>
+        <p>運転前の安全確認チェックリストを完了してください。</p>
+        <div class="video-container">
+            <video id="cameraStream" width="100%" autoplay muted></video>
+            <p id="personDetectionStatus">人物検知中...</p>
+        </div>
+        <div id="checklist">
+            <div class="checklist-item">
+                <input type="checkbox" id="check1"> <label for="check1">安全ベルトの確認</label><span id="status1" class="checklist-status"></span>
+            </div>
+            <div class="checklist-item">
+                <input type="checkbox" id="check2"> <label for="check2">周囲の安全確認</label><span id="status2" class="checklist-status"></span>
+            </div>
+            <div class="checklist-item">
+                <input type="checkbox" id="check3"> <label for="check3">油圧レバーの位置確認</label><span id="status3" class="checklist-status"></span>
+            </div>
+        </div>
+        <button id="completeButton" class="button" disabled>確認完了</button>
+    </div>
+
+    <script>
+        const checklistItems = document.querySelectorAll('#checklist input[type="checkbox"]');
+        const completeButton = document.getElementById('completeButton');
+        const cameraStream = document.getElementById('cameraStream');
+        const personDetectionStatus = document.getElementById('personDetectionStatus');
+        let personDetected = false;
+        let personLeftTimeout;
+        const alertAudio = new Audio('https://www.soundjay.com/button/beep-07.wav');
+
+        // Set up the checklist interactions
+        checklistItems.forEach((item, index) => {
+            item.addEventListener('change', () => {
+                const statusElement = document.getElementById(`status${index + 1}`);
+                if (item.checked) {
+                    statusElement.textContent = '良し！';
+                } else {
+                    statusElement.textContent = '';
+                }
+
+                const allChecked = Array.from(checklistItems).every(checkbox => checkbox.checked);
+                completeButton.disabled = !allChecked;
+            });
+        });
+
+        completeButton.addEventListener('click', () => {
+            alert('安全確認が完了しました。運転を開始できます。');
+        });
+
+        // Set up the video stream for person detection
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    cameraStream.srcObject = stream;
+                    loadModelAndDetectPerson();
+                })
+                .catch(err => {
+                    personDetectionStatus.textContent = 'カメラにアクセスできませんでした。';
+                });
+        } else {
+            personDetectionStatus.textContent = 'カメラがサポートされていません。';
+        }
+
+        // Load TensorFlow.js model and start person detection
+        async function loadModelAndDetectPerson() {
+            const model = await cocoSsd.load();
+            detectPerson(model);
+        }
+
+        async function detectPerson(model) {
+            const video = cameraStream;
+            let detectionStreak = 0;
+
+            async function detect() {
+                const predictions = await model.detect(video);
+                const personDetectedNow = predictions.some(prediction => prediction.class === 'person');
+
+                if (personDetectedNow) {
+                    detectionStreak++;
+                    if (detectionStreak >= 3) { // Require 3 consecutive detections to confirm presence
+                        if (!personDetected) {
+                            personDetected = true;
+                            personDetectionStatus.textContent = '運転手を検知しました。';
+                            clearTimeout(personLeftTimeout);
+                        }
+                    }
+                } else {
+                    detectionStreak = 0;
+                    if (personDetected) {
+                        personDetected = false;
+                        personDetectionStatus.textContent = '運転手が席を離れました。';
+                        handlePersonLeft();
+                    }
+                }
+                requestAnimationFrame(detect);
+            }
+
+            detect();
+        }
+
+        function handlePersonLeft() {
+            if (!personDetected) {
+                personLeftTimeout = setTimeout(() => {
+                    alertAudio.play();
+                    alert('カギを抜きましたか？');
+                }, 5000); // Alert after 5 seconds of person leaving
+            }
+        }
+    </script>
+</body>
+</html>
